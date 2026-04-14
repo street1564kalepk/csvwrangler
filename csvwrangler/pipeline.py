@@ -1,66 +1,74 @@
-from typing import Optional, List
+import csv
+import io
+from typing import Iterator, List, Optional
+
 from csvwrangler.reader import CSVReader
 from csvwrangler.filter import CSVFilter
+from csvwrangler.transform import CSVTransform
 from csvwrangler.writer import CSVWriter
 
 
 class Pipeline:
     """
-    Chainable pipeline that connects a CSVReader -> CSVFilter -> CSVWriter.
+    Chainable pipeline for reading, filtering, transforming, and writing CSV data.
     """
 
-    def __init__(self, source: str, delimiter: str = ",", encoding: str = "utf-8"):
-        self._reader = CSVReader(source, delimiter=delimiter, encoding=encoding)
-        self._filter: Optional[CSVFilter] = None
-        self._selected_columns: Optional[List[str]] = None
+    def __init__(self, source: CSVReader):
+        self._source = source
+        self._stage = source  # current active stage
 
     def select(self, *columns: str) -> "Pipeline":
-        """Restrict output to the specified columns."""
-        for col in columns:
-            if col not in self._reader.headers:
-                raise ValueError(f"Column '{col}' not found in source headers.")
-        self._selected_columns = list(columns)
+        """Keep only the specified columns in the output."""
+        outer = self
+
+        class _Projection:
+            @property
+            def headers(self) -> List[str]:
+                return [c for c in columns if c in outer._stage.headers]
+
+            def rows(self) -> Iterator[dict]:
+                keep = self.headers
+                for row in outer._stage.rows():
+                    yield {k: row[k] for k in keep if k in row}
+
+        self._stage = _Projection()
         return self
 
-    def filter(self) -> CSVFilter:
-        """Return a CSVFilter attached to this pipeline for chaining conditions."""
-        self._filter = CSVFilter(
-            rows=self._reader.rows(),
-            headers=self._reader.headers,
-        )
-        return self._filter
+    def filter(self, column: str, op: str, value: str) -> "Pipeline":
+        """Filter rows using a CSVFilter predicate."""
+        f = CSVFilter(self._stage)
+        f.where(column, op, value)
+        self._stage = f
+        return self
 
-    def to_file(self, destination: str, delimiter: str = ",") -> int:
-        """Write the (optionally filtered) rows to a CSV file. Returns rows written."""
-        if self._filter is not None:
-            row_iter = self._filter.apply()
-        else:
-            row_iter = self._reader.rows()
+    def transform(self) -> CSVTransform:
+        """
+        Attach a CSVTransform stage and return it so the caller can
+        chain rename / add_column / apply calls, then pass back to pipeline
+        via continue_with().
+        """
+        t = CSVTransform(self._stage)
+        self._stage = t
+        return t
 
-        headers = self._selected_columns or self._reader.headers
+    def continue_with(self, stage) -> "Pipeline":
+        """Attach an externally built stage (e.g. CSVTransform) to the pipeline."""
+        self._stage = stage
+        return self
 
-        def projected(rows):
-            for row in rows:
-                yield {col: row[col] for col in headers}
+    def to_file(self, path: str) -> None:
+        """Write the pipeline output to a CSV file."""
+        writer = CSVWriter(self._stage.headers)
+        writer.write(self._stage.rows(), path)
 
-        writer = CSVWriter(destination, headers=headers, delimiter=delimiter)
-        return writer.write(projected(row_iter))
-
-    def to_stdout(self) -> int:
-        """Write the (optionally filtered) rows to stdout. Returns rows written."""
-        import sys
-        if self._filter is not None:
-            row_iter = self._filter.apply()
-        else:
-            row_iter = self._reader.rows()
-
-        headers = self._selected_columns or self._reader.headers
-        writer = CSVWriter(sys.stdout, headers=headers)
-        return writer.write(row_iter)
+    def to_string(self) -> str:
+        """Return the pipeline output as a CSV-formatted string."""
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=self._stage.headers)
+        writer.writeheader()
+        for row in self._stage.rows():
+            writer.writerow(row)
+        return buf.getvalue()
 
     def __repr__(self) -> str:
-        return (
-            f"Pipeline(source={self._reader!r}, "
-            f"filter={self._filter!r}, "
-            f"columns={self._selected_columns})"
-        )
+        return f"Pipeline(stage={self._stage!r})"
