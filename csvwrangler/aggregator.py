@@ -37,6 +37,31 @@ class CSVAggregator:
             if col not in src_headers:
                 raise ValueError(f"Aggregation column '{col}' not in source headers")
 
+    def _compute_aggregate(self, op: str, src_col: str, group_rows: List[Dict]) -> Any:
+        """Compute a single aggregate value for a group of rows.
+
+        :param op: the aggregation operation (count, sum, min, max, mean)
+        :param src_col: the source column name to aggregate over
+        :param group_rows: the list of row dicts in this group
+        :return: the computed aggregate value, or None if not applicable
+        """
+        if op == "count":
+            return len(group_rows)
+        values = []
+        for r in group_rows:
+            try:
+                values.append(float(r[src_col]))
+            except (ValueError, TypeError):
+                pass
+        if op == "sum":
+            return sum(values)
+        elif op == "min":
+            return min(values) if values else None
+        elif op == "max":
+            return max(values) if values else None
+        elif op == "mean":
+            return sum(values) / len(values) if values else None
+
     @property
     def headers(self) -> List[str]:
         agg_cols = list(self._aggregations.keys())
@@ -52,22 +77,7 @@ class CSVAggregator:
             result = {col: val for col, val in zip(self._group_by, key)}
             for out_col, spec in self._aggregations.items():
                 op, src_col = spec.split(":", 1)
-                values = []
-                for r in group_rows:
-                    try:
-                        values.append(float(r[src_col]))
-                    except (ValueError, TypeError):
-                        pass
-                if op == "count":
-                    result[out_col] = len(group_rows)
-                elif op == "sum":
-                    result[out_col] = sum(values)
-                elif op == "min":
-                    result[out_col] = min(values) if values else None
-                elif op == "max":
-                    result[out_col] = max(values) if values else None
-                elif op == "mean":
-                    result[out_col] = sum(values) / len(values) if values else None
+                result[out_col] = self._compute_aggregate(op, src_col, group_rows)
             yield result
 
     def row_count(self) -> int:
