@@ -1,4 +1,5 @@
-"""csvwrangler - A CLI tool for fast filtering, joining, and transforming large CSV files."""
+"""csvwrangler – fast CSV filtering, joining, and transformation."""
+from csvwrangler.pipeline import Pipeline
+from csvwrangler.flattener import CSVFlattener
 
-__version__ = "0.1.0"
-__author__ = "csvwrangler contributors"
+__all__ = ["Pipeline", "CSVFlattener"]
