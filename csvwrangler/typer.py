@@ -42,7 +42,24 @@ class CSVTyper:
         return "str"
 
     def detected_types(self) -> dict[str, str]:
+        """Return a copy of the detected column types."""
         return dict(self._detected)
+
+    def set_type(self, col: str, t: str) -> None:
+        """Override the detected type for a specific column.
+
+        Args:
+            col: Column name to override.
+            t: Target type; must be one of 'int', 'float', or 'str'.
+
+        Raises:
+            ValueError: If the column does not exist or the type is unsupported.
+        """
+        if col not in self._detected:
+            raise ValueError(f"Unknown column: {col!r}")
+        if t not in self.SUPPORTED:
+            raise ValueError(f"Unsupported type {t!r}; choose from {self.SUPPORTED}")
+        self._detected[col] = t
 
     def headers(self) -> list[str]:
         return self._source.headers()
