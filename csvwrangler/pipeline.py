@@ -1,7 +1,12 @@
 """Pipeline – chainable CSV processing."""
 from __future__ import annotations
+
 import csv
 import io
+from typing import Optional
+
+from csvwrangler.reader import CSVReader
+from csvwrangler.writer import CSVWriter
 from csvwrangler.filter import CSVFilter
 from csvwrangler.transform import CSVTransform
 from csvwrangler.sorter import CSVSorter
@@ -31,6 +36,7 @@ from csvwrangler.normalizer import CSVNormalizer
 from csvwrangler.chunker import CSVChunker
 from csvwrangler.interpolator import CSVInterpolator
 from csvwrangler.window import CSVWindow
+from csvwrangler.profiler import CSVProfiler
 from csvwrangler.formatter import CSVFormatter
 from csvwrangler.tagger import CSVTagger
 from csvwrangler.rounder import CSVRounder
@@ -49,160 +55,215 @@ class Pipeline:
     def __init__(self, source):
         self._source = source
 
-    # ------------------------------------------------------------------ output
-    def to_file(self, path: str) -> None:
-        from csvwrangler.writer import CSVWriter
-        CSVWriter(self._source).write(path)
+    # ------------------------------------------------------------------ #
+    # Constructors
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def from_file(cls, path: str, encoding: str = "utf-8") -> "Pipeline":
+        return cls(CSVReader(path, encoding=encoding))
+
+    @classmethod
+    def from_string(cls, text: str) -> "Pipeline":
+        reader = csv.DictReader(io.StringIO(text))
+        rows = list(reader)
+        headers = reader.fieldnames or []
+
+        class _Src:
+            @property
+            def headers(self_):
+                return list(headers)
+
+            @property
+            def rows(self_):
+                return iter(rows)
+
+            @property
+            def row_count(self_):
+                return len(rows)
+
+        return cls(_Src())
+
+    # ------------------------------------------------------------------ #
+    # Terminal operations
+    # ------------------------------------------------------------------ #
+    def to_file(self, path: str, encoding: str = "utf-8") -> None:
+        CSVWriter(self._source).write(path, encoding=encoding)
 
     def to_string(self) -> str:
         buf = io.StringIO()
-        writer = csv.DictWriter(buf, fieldnames=self._source.headers, lineterminator="\n")
+        writer = csv.DictWriter(buf, fieldnames=self._source.headers)
         writer.writeheader()
-        for row in self._source.rows():
+        for row in self._source.rows:
             writer.writerow(row)
         return buf.getvalue()
 
-    def _wrap(self, new_source):
+    # ------------------------------------------------------------------ #
+    # Internal helper
+    # ------------------------------------------------------------------ #
+    def _wrap(self, new_source) -> "Pipeline":
         return Pipeline(new_source)
 
-    # ------------------------------------------------------------------ ops
-    def where(self, column, op, value):
-        return self._wrap(CSVFilter(self._source, column, op, value))
+    # ------------------------------------------------------------------ #
+    # Transformation methods
+    # ------------------------------------------------------------------ #
+    def where(self, column: str, operator: str, value: str) -> "Pipeline":
+        return self._wrap(CSVFilter(self._source, column, operator, value))
 
-    def select(self, columns):
+    def select(self, columns: list) -> "Pipeline":
         return self._wrap(CSVTransform(self._source).select(columns))
 
-    def rename(self, old, new):
-        return self._wrap(CSVTransform(self._source).rename(old, new))
+    def rename(self, mapping: dict) -> "Pipeline":
+        t = CSVTransform(self._source)
+        for old, new in mapping.items():
+            t = t.rename(old, new)
+        return self._wrap(t)
 
-    def add_column(self, name, expr):
+    def add_column(self, name: str, expr) -> "Pipeline":
         return self._wrap(CSVTransform(self._source).add_column(name, expr))
 
-    def sort(self, column, descending=False):
+    def sort_by(self, column: str, descending: bool = False) -> "Pipeline":
         return self._wrap(CSVSorter(self._source, column, descending=descending))
 
-    def deduplicate(self, columns=None):
+    def deduplicate(self, columns: Optional[list] = None) -> "Pipeline":
         return self._wrap(CSVDeduplicator(self._source, columns=columns))
 
-    def aggregate(self, group_by, aggregations):
+    def aggregate(self, group_by: list, aggregations: dict) -> "Pipeline":
         return self._wrap(CSVAggregator(self._source, group_by, aggregations))
 
-    def limit(self, n):
+    def limit(self, n: int) -> "Pipeline":
         return self._wrap(CSVLimiter(self._source, n))
 
-    def join(self, right, on, how="inner"):
-        return self._wrap(CSVJoiner(self._source, right, on, how=how))
+    def join(self, right, on: str, how: str = "inner") -> "Pipeline":
+        return self._wrap(CSVJoiner(self._source, right._source, on=on, how=how))
 
-    def slice(self, start, stop):
+    def slice(self, start: int, stop: int) -> "Pipeline":
         return self._wrap(CSVSlicer(self._source, start, stop))
 
-    def sample(self, n, seed=None):
+    def sample(self, n: int, seed: Optional[int] = None) -> "Pipeline":
         return self._wrap(CSVSampler(self._source, n, seed=seed))
 
-    def unpivot(self, id_cols, value_col="value", variable_col="variable"):
-        return self._wrap(CSVUnpivot(self._source, id_cols, value_col=value_col, variable_col=variable_col))
+    def unpivot(self, id_columns: list, value_columns: list,
+                key_col: str = "key", value_col: str = "value") -> "Pipeline":
+        return self._wrap(CSVUnpivot(self._source, id_columns, value_columns,
+                                     key_col=key_col, value_col=value_col))
 
-    def pivot(self, index, column, value):
-        return self._wrap(CSVPivotter(self._source, index, column, value))
+    def pivot(self, index: str, columns: str, values: str,
+              agg: str = "first") -> "Pipeline":
+        return self._wrap(CSVPivotter(self._source, index, columns, values, agg=agg))
 
-    def rename_columns(self, mapping):
+    def rename_columns(self, mapping: dict) -> "Pipeline":
         return self._wrap(CSVRenamer(self._source, mapping))
 
-    def flatten(self, column, delimiter=","):
-        return self._wrap(CSVFlattener(self._source, column, delimiter=delimiter))
+    def flatten(self, column: str, separator: str = ",") -> "Pipeline":
+        return self._wrap(CSVFlattener(self._source, column, separator=separator))
 
-    def cast(self, casts):
+    def cast(self, casts: dict) -> "Pipeline":
         return self._wrap(CSVCaster(self._source, casts))
 
-    def split_by(self, column):
+    def split_by(self, column: str):
         splitter = CSVSplitter(self._source, column)
         return {key: Pipeline(grp) for key, grp in splitter.groups()}
 
-    def fill(self, fills):
+    def fill(self, fills: dict) -> "Pipeline":
         return self._wrap(CSVFiller(self._source, fills))
 
-    def validate(self, rules, mode="drop"):
+    def validate(self, rules: dict, mode: str = "drop") -> "Pipeline":
         from csvwrangler.pipeline_validate_patch import _validate
         return _validate(self, rules, mode)
 
-    def detect_types(self):
+    def detect_types(self) -> dict:
         return CSVTyper(self._source).detected_types
 
-    def stack(self, other):
-        return self._wrap(CSVStacker(self._source, other))
+    def stack(self, other: "Pipeline") -> "Pipeline":
+        return self._wrap(CSVStacker(self._source, other._source))
 
-    def string_ops(self, ops):
+    def string_ops(self, ops: dict) -> "Pipeline":
         return self._wrap(CSVStringOps(self._source, ops))
 
-    def count_values(self, column):
-        return self._wrap(CSVCounter(self._source, column))
+    def count_values(self, column: str, count_col: str = "count") -> "Pipeline":
+        return self._wrap(CSVCounter(self._source, column, count_col=count_col))
 
-    def diff(self, other, key):
-        return self._wrap(CSVDiffer(self._source, other, key))
+    def diff(self, other: "Pipeline", key: str, mode: str = "all") -> "Pipeline":
+        return self._wrap(CSVDiffer(self._source, other._source, key=key, mode=mode))
 
-    def zip_with(self, other):
-        return self._wrap(CSVZipper(self._source, other))
+    def zip_with(self, other: "Pipeline", suffixes=None) -> "Pipeline":
+        return self._wrap(CSVZipper(self._source, other._source, suffixes=suffixes))
 
-    def transpose(self):
-        return self._wrap(CSVTransposer(self._source))
+    def transpose(self, key_col: str = "field", value_col: str = "value") -> "Pipeline":
+        return self._wrap(CSVTransposer(self._source, key_col=key_col, value_col=value_col))
 
-    def encode(self, column, encoding="base64"):
-        from csvwrangler.pipeline_encode_patch import _patch, encode
-        _patch(Pipeline)
-        return self.encode(column, encoding)
+    def encode(self, ops: dict) -> "Pipeline":
+        from csvwrangler.pipeline_encode_patch import _patch
+        _patch(self.__class__)
+        return self._wrap(CSVEncoder(self._source, ops))
 
-    def normalize(self, ops):
+    def normalize(self, ops: dict) -> "Pipeline":
         return self._wrap(CSVNormalizer(self._source, ops))
 
-    def chunk(self, size):
+    def chunk(self, size: int) -> list:
         chunker = CSVChunker(self._source, size)
         results = []
         for chunk in chunker.chunks():
             buf = io.StringIO()
-            w = csv.DictWriter(buf, fieldnames=chunk[0].keys(), lineterminator="\n")
+            w = csv.DictWriter(buf, fieldnames=chunk[0].keys() if chunk else self._source.headers)
             w.writeheader()
-            w.writerows(chunk)
+            for row in chunk:
+                w.writerow(row)
             results.append(buf.getvalue())
         return results
 
-    def interpolate(self, column, method="linear"):
-        return self._wrap(CSVInterpolator(self._source, column, method=method))
+    def interpolate(self, columns: list, method: str = "linear") -> "Pipeline":
+        return self._wrap(CSVInterpolator(self._source, columns, method=method))
 
-    def window(self, column, func, window_size, out_col=None):
-        return self._wrap(CSVWindow(self._source, column, func, window_size, out_col=out_col))
+    def window(self, ops: dict, window_size: int = 3) -> "Pipeline":
+        return self._wrap(CSVWindow(self._source, ops, window_size=window_size))
 
-    def format_columns(self, templates):
+    def profile(self) -> dict:
+        return CSVProfiler(self._source).profile
+
+    def format_columns(self, templates: dict) -> "Pipeline":
         return self._wrap(CSVFormatter(self._source, templates))
 
-    def tag_column(self, column, conditions, out_col="tag"):
-        return self._wrap(CSVTagger(self._source, column, conditions, out_col=out_col))
+    def tag_column(self, column: str, name: str, rules: list) -> "Pipeline":
+        return self._wrap(CSVTagger(self._source, column, name, rules))
 
-    def round_columns(self, columns, decimals=2):
-        return self._wrap(CSVRounder(self._source, columns, decimals=decimals))
+    def round_columns(self, cols: dict) -> "Pipeline":
+        return self._wrap(CSVRounder(self._source, cols))
 
-    def clip(self, column, lower=None, upper=None):
-        return self._wrap(CSVClipper(self._source, column, lower=lower, upper=upper))
+    def clip(self, bounds: dict) -> "Pipeline":
+        return self._wrap(CSVClipper(self._source, bounds))
 
-    def condense(self, others):
-        return self._wrap(CSVCondenser(self._source, others))
+    def condense(self, others: list, separator: str = " ") -> "Pipeline":
+        return self._wrap(CSVCondenser(self._source,
+                                       [o._source for o in others],
+                                       separator=separator))
 
-    def scale(self, columns, method="minmax"):
+    def scale(self, columns: list, method: str = "minmax") -> "Pipeline":
         return self._wrap(CSVScaler(self._source, columns, method=method))
 
-    def rank(self, column, out_col="rank", descending=False):
-        return self._wrap(CSVRanker(self._source, column, out_col=out_col, descending=descending))
+    def rank(self, column: str, name: str = "rank", descending: bool = False) -> "Pipeline":
+        return self._wrap(CSVRanker(self._source, column, name=name, descending=descending))
 
-    def correlate(self, columns=None):
-        return CSVCorrelator(self._source, columns=columns).matrix()
+    def correlate(self, columns: list) -> dict:
+        return CSVCorrelator(self._source, columns).matrix
 
-    def bin(self, column, bins, labels=None, out_col=None):
-        return self._wrap(CSVBinner(self._source, column, bins, labels=labels, out_col=out_col))
+    def bin(self, column: str, bins: list, labels: list, name: str = "bin") -> "Pipeline":
+        return self._wrap(CSVBinner(self._source, column, bins, labels, name=name))
 
-    def flag_outliers(self, column, method="iqr", out_col=None):
-        return self._wrap(CSVOutlier(self._source, column, method=method, out_col=out_col))
+    def flag_outliers(self, columns: list, method: str = "iqr",
+                      name: str = "outlier") -> "Pipeline":
+        return self._wrap(CSVOutlier(self._source, columns, method=method, name=name))
 
-    def rolling(self, column, func, window, out_col=None):
-        return self._wrap(CSVRoller(self._source, column, func, window, out_col=out_col))
+    def rolling(self, ops: dict, window: int = 3) -> "Pipeline":
+        return self._wrap(CSVRoller(self._source, ops, window=window))
 
-    def score(self, weights: dict, score_col: str = "score", default: float = 0.0):
-        return self._wrap(CSVScorer(self._source, weights, score_col=score_col, default=default))
+    def score(self, weights: dict, name: str = "score") -> "Pipeline":
+        from csvwrangler.pipeline_scorer_patch import _patch
+        _patch(self.__class__)
+        return self._wrap(CSVScorer(self._source, weights, name=name))
+
+    def shift_columns(self, shifts: dict) -> "Pipeline":
+        from csvwrangler.pipeline_shifter_patch import _patch
+        _patch(self.__class__)
+        from csvwrangler.shifter import CSVShifter
+        return self._wrap(CSVShifter(self._source, shifts))
