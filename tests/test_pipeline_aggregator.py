@@ -84,3 +84,15 @@ def test_aggregate_mean(pipeline):
     rows = {r["region"]: float(r["avg"]) for r in _parse(result)}
     assert rows["North"] == pytest.approx(380.0 / 3)
     assert rows["South"] == pytest.approx(100.0)
+
+
+def test_aggregate_multiple_keys(pipeline):
+    """Grouping by multiple columns should produce one row per unique combination."""
+    result = pipeline.aggregate(["region", "product"], {"total": "sum:amount"}).to_string()
+    rows = _parse(result)
+    # CSV_DATA has 3 unique (region, product) pairs: North/A, North/B, South/B
+    assert len(rows) == 3
+    key_map = {(r["region"], r["product"]): float(r["total"]) for r in rows}
+    assert key_map[("North", "A")] == pytest.approx(300.0)
+    assert key_map[("North", "B")] == pytest.approx(80.0)
+    assert key_map[("South", "B")] == pytest.approx(200.0)
