@@ -43,6 +43,15 @@ csvwrangler load users.csv \
   save result.csv
 ```
 
+**Preview output without saving:**
+
+```bash
+csvwrangler load data.csv \
+  filter "country == 'US'" \
+  select name,email \
+  head 10
+```
+
 **Available commands:**
 
 | Command  | Description                          |
@@ -54,6 +63,7 @@ csvwrangler load users.csv \
 | `sort`   | Sort rows by column                  |
 | `join`   | Join with another CSV file           |
 | `rename` | Rename columns                       |
+| `head`   | Preview the first N rows             |
 | `save`   | Write result to a CSV file           |
 
 For full documentation, run:
