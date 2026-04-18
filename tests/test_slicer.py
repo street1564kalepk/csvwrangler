@@ -98,3 +98,11 @@ def test_negative_offset_raises():
 def test_negative_limit_raises():
     with pytest.raises(ValueError, match="limit"):
         CSVSlicer(_source(), limit=-5)
+
+
+def test_rows_are_independent_across_iterations():
+    """Iterating rows() twice should yield the same results each time."""
+    slicer = _make(offset=1, limit=3)
+    first = list(slicer.rows())
+    second = list(slicer.rows())
+    assert [r["name"] for r in first] == [r["name"] for r in second]
