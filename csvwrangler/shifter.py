@@ -30,16 +30,26 @@ class CSVShifter:
     def headers(self):
         return self._source.headers
 
+    def _parse_date(self, value: str):
+        """Try parsing *value* against each supported format.
+
+        Returns ``(datetime, fmt)`` on success, or ``(None, None)`` if no
+        format matches.
+        """
+        for fmt in self._SUPPORTED_DATE_FMTS:
+            try:
+                return datetime.datetime.strptime(value, fmt), fmt
+            except ValueError:
+                continue
+        return None, None
+
     def _shift_value(self, value: str, offset):
         if isinstance(offset, dict):
-            for fmt in self._SUPPORTED_DATE_FMTS:
-                try:
-                    dt = datetime.datetime.strptime(value, fmt)
-                    dt += datetime.timedelta(**offset)
-                    return dt.strftime(fmt)
-                except ValueError:
-                    continue
-            return value  # unparseable – leave as-is
+            dt, fmt = self._parse_date(value)
+            if dt is None:
+                return value  # unparseable – leave as-is
+            dt += datetime.timedelta(**offset)
+            return dt.strftime(fmt)
         try:
             num = float(value)
             result = num + offset
