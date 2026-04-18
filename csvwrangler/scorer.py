@@ -45,3 +45,14 @@ class CSVScorer:
     @property
     def row_count(self) -> int:
         return sum(1 for _ in self.rows())
+
+    def top_n(self, n: int) -> list[dict]:
+        """Return the *n* highest-scoring rows, sorted descending by score.
+
+        Parameters
+        ----------
+        n : number of rows to return
+        """
+        if n < 1:
+            raise ValueError(f"n must be a positive integer, got {n}")
+        return sorted(self.rows(), key=lambda r: r[self._score_col], reverse=True)[:n]
