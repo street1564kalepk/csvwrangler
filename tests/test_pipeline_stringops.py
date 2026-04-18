@@ -23,33 +23,32 @@ def _parse(text: str):
     return list(reader.rows())
 
 
-def test_pipeline_stringops_headers():
-    src = pipeline()
-    ops = CSVStringOps(src, {"name": "strip"})
+def _run_ops(ops) -> list:
+    """Write ops pipeline to a buffer and return parsed rows."""
     out = io.StringIO()
     CSVWriter(ops).write(out)
     out.seek(0)
-    rows = _parse(out.read())
+    return _parse(out.read())
+
+
+def test_pipeline_stringops_headers():
+    src = pipeline()
+    ops = CSVStringOps(src, {"name": "strip"})
+    rows = _run_ops(ops)
     assert set(rows[0].keys()) == {"id", "name", "city"}
 
 
 def test_pipeline_strip_name():
     src = pipeline()
     ops = CSVStringOps(src, {"name": "strip"})
-    out = io.StringIO()
-    CSVWriter(ops).write(out)
-    out.seek(0)
-    rows = _parse(out.read())
+    rows = _run_ops(ops)
     assert rows[0]["name"] == "alice"
 
 
 def test_pipeline_lower_city():
     src = pipeline()
     ops = CSVStringOps(src, {"city": "lower"})
-    out = io.StringIO()
-    CSVWriter(ops).write(out)
-    out.seek(0)
-    rows = _parse(out.read())
+    rows = _run_ops(ops)
     assert rows[1]["city"] == "london"
 
 
@@ -57,9 +56,14 @@ def test_pipeline_chained_ops():
     src = pipeline()
     ops1 = CSVStringOps(src, {"name": "strip"})
     ops2 = CSVStringOps(ops1, {"name": "upper"})
-    out = io.StringIO()
-    CSVWriter(ops2).write(out)
-    out.seek(0)
-    rows = _parse(out.read())
+    rows = _run_ops(ops2)
     assert rows[0]["name"] == "ALICE"
     assert rows[1]["name"] == "BOB"
+
+
+def test_pipeline_strip_city():
+    """Ensure strip removes surrounding whitespace from city column."""
+    src = pipeline()
+    ops = CSVStringOps(src, {"city": "strip"})
+    rows = _run_ops(ops)
+    assert rows[2]["city"] == "Paris"
