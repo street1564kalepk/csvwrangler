@@ -40,6 +40,16 @@ def test_round_columns_values():
     assert rows[1]["score"] == "2.72"
 
 
+def test_round_columns_multiple_columns():
+    """Rounding multiple columns at once should apply each precision independently."""
+    out = pipeline().round_columns({"score": 1, "ratio": 3}).to_string()
+    rows = _parse(out)
+    assert rows[0]["score"] == "3.1"
+    assert rows[0]["ratio"] == "0.667"
+    assert rows[1]["score"] == "2.7"
+    assert rows[1]["ratio"] == "1.333"
+
+
 def test_round_columns_chained_with_filter():
     out = (
         pipeline()
