@@ -28,6 +28,12 @@ class CSVTokenizer:
             raise ValueError(f"Column '{column}' not found in headers.")
         if count_col is None and tokens_col is None:
             raise ValueError("At least one of count_col or tokens_col must be set.")
+        existing = set(source.headers)
+        for col in (count_col, tokens_col):
+            if col is not None and col in existing:
+                raise ValueError(
+                    f"New column '{col}' conflicts with an existing header."
+                )
         self._source = source
         self._column = column
         self._count_col = count_col
