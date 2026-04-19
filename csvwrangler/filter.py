@@ -20,6 +20,10 @@ class CSVFilter:
         if column not in self._headers:
             raise ValueError(f"Column '{column}' not found in headers: {self._headers}")
 
+        supported_ops = {"==", "!=", "<", "<=", ">", ">=", "contains", "startswith", "endswith"}
+        if op not in supported_ops:
+            raise ValueError(f"Unsupported operator '{op}'. Must be one of: {sorted(supported_ops)}")
+
         def predicate(row: Dict[str, Any]) -> bool:
             cell = row.get(column, "")
             try:
@@ -48,7 +52,7 @@ class CSVFilter:
                     return numeric_cell > numeric_value
                 elif op == ">=":
                     return numeric_cell >= numeric_value
-            raise ValueError(f"Unsupported operator '{op}' or non-numeric comparison.")
+            raise ValueError(f"Operator '{op}' requires numeric values, but could not convert '{cell}' or '{value}' to float.")
 
         self._predicates.append(predicate)
         return self
