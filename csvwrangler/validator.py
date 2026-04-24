@@ -48,6 +48,18 @@ class CSVValidator:
                 elif self._mode == "raise":
                     raise ValueError(f"Validation failed for columns: {errors} in row {row}")
 
+    def invalid_rows(self) -> Iterable[dict]:
+        """Yield rows that fail validation, each annotated with a '_errors' key
+        listing the failing column names regardless of the current mode.
+        Useful for inspecting bad data without changing the validator's mode.
+        """
+        for row in self._source.rows():
+            errors = [
+                col for col, fn in self._rules.items() if not fn(row.get(col, ""))
+            ]
+            if errors:
+                yield {**row, "_errors": "|".join(errors)}
+
     def row_count(self) -> int:
         return sum(1 for _ in self.rows())
 
