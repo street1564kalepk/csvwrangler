@@ -60,6 +60,26 @@ class CSVFiller:
     def row_count(self) -> int:
         return sum(1 for _ in self.rows())
 
+    def filled_count(self) -> Dict[str, int]:
+        """Return the number of values filled per column.
+
+        Iterates over all rows and counts how many cells were empty
+        (``None`` or empty string) and therefore replaced with a fill
+        value.  Useful for auditing how much missing data was patched.
+
+        Returns
+        -------
+        dict
+            Mapping of column name → number of filled cells.
+        """
+        counts: Dict[str, int] = {col: 0 for col in self._columns}
+        fill_cols = set(self._columns)
+        for row in self._source.rows():
+            for col in fill_cols:
+                if row.get(col) in (None, ""):
+                    counts[col] += 1
+        return counts
+
     def __repr__(self) -> str:  # pragma: no cover
         return (
             f"CSVFiller(columns={self._columns!r}, "
