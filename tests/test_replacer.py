@@ -65,6 +65,17 @@ def test_substring_replacement():
     assert labels == ["bar", "baz", "qux"]
 
 
+def test_substring_multiple_matches_in_value():
+    """Ensure all occurrences of the pattern are replaced when substring=True."""
+    src = _FakeSource(
+        ["label"],
+        [{"label": "ab_ab_cd"}],
+    )
+    r = CSVReplacer(src, {"label": {"ab_": ""}}, substring=True)
+    labels = [row["label"] for row in r.rows()]
+    assert labels == ["cd"]
+
+
 def test_unknown_column_raises():
     with pytest.raises(ValueError, match="Unknown columns"):
         CSVReplacer(_source(), {"nonexistent": {"a": "b"}})
