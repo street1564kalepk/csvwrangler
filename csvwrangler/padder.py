@@ -46,6 +46,10 @@ class CSVPadder:
         return list(self._source.headers)
 
     def _pad(self, value: str) -> str:
+        """Pad *value* to ``self._width`` using the configured alignment.
+
+        Values that are already at or beyond *width* are returned unchanged.
+        """
         if self._align == "left":
             return value.ljust(self._width, self._fillchar)
         if self._align == "right":
